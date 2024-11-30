@@ -29,9 +29,12 @@
         </activity>
 
         <!-- Sync Receiver -->
-        <receiver
-            android:name=".SyncReceiver"
-            android:exported="false" />
+        <receiver android:name=".SyncReceiver" android:enabled="true" android:exported="false" android:permission="android.permission.BROADCAST_STICKY">
+            <intent-filter>
+                <action android:name="com.phc.serviceapp.SYNC_ACTION" />
+            </intent-filter>
+        </receiver>
+
 
     </application>
 </manifest>
