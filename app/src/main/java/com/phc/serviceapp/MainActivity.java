@@ -9,6 +9,7 @@ import androidx.core.content.ContextCompat;
 
 import android.app.AlarmManager;
 import android.app.PendingIntent;
+import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -212,15 +213,26 @@ public class MainActivity extends AppCompatActivity {
             permissionsToRequest.add(android.Manifest.permission.READ_MEDIA_IMAGES);
         }
 
+        // If permissions are missing, request them
         if (!permissionsToRequest.isEmpty()) {
-            // Request the missing permissions
-            ActivityCompat.requestPermissions(this, permissionsToRequest.toArray(new String[0]), PERMISSION_REQUEST_CODE);
+            try {
+                ActivityCompat.requestPermissions(this, permissionsToRequest.toArray(new String[0]), PERMISSION_REQUEST_CODE);
+            } catch (Exception e) {
+                Log.e("Permissions", "Error requesting permissions: ", e);
+                // Optionally, show a message to the user
+//                Toast.makeText(this, "Error requesting permissions", Toast.LENGTH_SHORT).show();
+            }
         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             // Android 11 or above - Use the appropriate intent for file access permissions
             if (!Environment.isExternalStorageManager()) {
-                // Check if the app has MANAGE_EXTERNAL_STORAGE permission
-                Intent intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
-                startActivityForResult(intent, PERMISSION_REQUEST_CODE);
+                try {
+                    // Check if the app has MANAGE_EXTERNAL_STORAGE permission
+                    Intent intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
+                    startActivityForResult(intent, PERMISSION_REQUEST_CODE);
+                } catch (ActivityNotFoundException e) {
+                    Log.e("Permissions", "Error starting permission request activity: ", e);
+//                    Toast.makeText(this, "Unable to open permissions settings", Toast.LENGTH_SHORT).show();
+                }
             } else {
                 startBackgroundService();
             }
