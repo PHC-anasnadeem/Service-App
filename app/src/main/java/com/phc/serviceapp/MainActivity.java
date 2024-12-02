@@ -132,6 +132,7 @@ public class MainActivity extends AppCompatActivity {
             progressBar.setVisibility(View.GONE);
         }
     }
+
     @Override
     protected void onDestroy() {
         super.onDestroy();

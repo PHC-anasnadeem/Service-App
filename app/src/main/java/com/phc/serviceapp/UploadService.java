@@ -116,6 +116,7 @@ public class UploadService extends Service {
         }
     }
 
+
     private void sendPostRequest(String serverUrl, String payload) throws IOException {
         // Set up connection
         URL url = new URL(serverUrl);

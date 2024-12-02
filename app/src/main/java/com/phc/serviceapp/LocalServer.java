@@ -24,6 +24,7 @@ public class LocalServer extends NanoHTTPD {
         }
     }
 
+
     @Override
     public Response serve(IHTTPSession session) {
         if (Method.POST.equals(session.getMethod())) {
