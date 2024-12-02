@@ -118,7 +118,7 @@ public class UploadService extends Service {
 
 
     private void sendPostRequest(String serverUrl, String payload) throws IOException {
-        // Set up connection
+       try{ // Set up connection
         URL url = new URL(serverUrl);
         HttpURLConnection connection = (HttpURLConnection) url.openConnection();
         connection.setRequestMethod("POST");
@@ -138,6 +138,10 @@ public class UploadService extends Service {
         } else {
             Log.e(TAG, "Failed to upload: " + payload + ". Server responded with: " + responseCode);
         }
+
+    } catch (IOException e) {
+        Log.e("Upload", "Error uploading file", e);
+    }
     }
 
     @Override
