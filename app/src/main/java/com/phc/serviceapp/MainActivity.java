@@ -192,6 +192,7 @@ public class MainActivity extends AppCompatActivity {
         }, 0, SYNC_INTERVAL); // Start immediately, then repeat every hour
     }
 
+    // Method to check if necessary permissions are granted
     private boolean hasPermissions() {
         boolean storagePermission = ContextCompat.checkSelfPermission(this, android.Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
         boolean mediaPermission = ContextCompat.checkSelfPermission(this, android.Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED;
@@ -199,7 +200,7 @@ public class MainActivity extends AppCompatActivity {
         return storagePermission && mediaPermission && manageStoragePermission;
     }
 
-
+    // Method to request missing permissions
     private void requestPermissions() {
         List<String> permissionsToRequest = new ArrayList<>();
 
@@ -220,7 +221,7 @@ public class MainActivity extends AppCompatActivity {
             } catch (Exception e) {
                 Log.e("Permissions", "Error requesting permissions: ", e);
                 // Optionally, show a message to the user
-//                Toast.makeText(this, "Error requesting permissions", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, "Error requesting permissions", Toast.LENGTH_SHORT).show();
             }
         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             // Android 11 or above - Use the appropriate intent for file access permissions
@@ -231,17 +232,19 @@ public class MainActivity extends AppCompatActivity {
                     startActivityForResult(intent, PERMISSION_REQUEST_CODE);
                 } catch (ActivityNotFoundException e) {
                     Log.e("Permissions", "Error starting permission request activity: ", e);
-//                    Toast.makeText(this, "Unable to open permissions settings", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, "Unable to open permissions settings", Toast.LENGTH_SHORT).show();
                 }
             } else {
+                // Permissions are granted, proceed to the background service
                 startBackgroundService();
             }
         } else {
-            // For lower versions, start the background service if permissions are granted
+            // For lower versions, directly start the background service if permissions are granted
             startBackgroundService();
         }
     }
 
+    // onActivityResult to handle the result of permission request
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
@@ -257,7 +260,7 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    // Open the general app settings if permission isn't granted
+    // Method to show a settings dialog if the user hasn't granted permissions
     private void showSettingsDialog() {
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle("Permission Required");
@@ -270,6 +273,7 @@ public class MainActivity extends AppCompatActivity {
         builder.show();
     }
 
+    // Method to open the app's settings page for permission management
     private void openAppSettings() {
         Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
         Uri uri = Uri.fromParts("package", getPackageName(), null);
