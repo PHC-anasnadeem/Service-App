@@ -110,7 +110,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void startLocalServer() {
         try {
-            localServer = new LocalServer(8080); // Start server on port 8080
+            LocalServer localServer = new LocalServer(this, 8080); // "this" ka use activity/service context ke liye hoga
             localServer.start();
 //            Toast.makeText(this, "Local service server started!", Toast.LENGTH_SHORT).show();
 

@@ -1,5 +1,7 @@
 package com.phc.serviceapp;
 
+import android.content.Context;
+
 import fi.iki.elonen.NanoHTTPD;
 
 import java.io.File;
@@ -10,10 +12,12 @@ import java.util.Map;
 
 public class LocalServer extends NanoHTTPD {
 
-    private static final String UPLOAD_DIR = "uploads";
+//    private static final String UPLOAD_DIR = "uploads";
+private final String UPLOAD_DIR;
 
-    public LocalServer(int port) {
+    public LocalServer(Context context, int port) {
         super(port);
+        UPLOAD_DIR = context.getFilesDir().getAbsolutePath() + "/uploads";
         createUploadDirectory();
     }
 
