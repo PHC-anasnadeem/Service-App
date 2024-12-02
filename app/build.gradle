@@ -39,6 +39,7 @@ dependencies {
 
     implementation 'org.nanohttpd:nanohttpd:2.3.1'
     implementation 'com.journeyapps:zxing-android-embedded:4.3.0'
-
+    implementation 'com.squareup.okhttp3:okhttp-urlconnection:4.9.0'
+    implementation 'com.squareup.okhttp3:okhttp:4.9.0'
 
 }

