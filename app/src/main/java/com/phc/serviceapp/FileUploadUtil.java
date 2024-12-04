@@ -12,12 +12,13 @@ import java.net.URL;
 
 public class FileUploadUtil {
 
-    private static final String serverUrl = "http://192.168.200.78:8080/upload";
+    private static final String serverUrl = "http://192.168.200.172:44326/uploads";
     private static final String boundary = "----WebKitFormBoundary7MA4YWxkTrZu0gW";  // A unique boundary
 
     public static void uploadFile(Context context, File file) {
         new Thread(() -> {
             try {
+
                 HttpURLConnection connection = (HttpURLConnection) new URL(serverUrl).openConnection();
                 connection.setRequestMethod("POST");
                 connection.setDoOutput(true);
