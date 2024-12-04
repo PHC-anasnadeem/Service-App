@@ -56,6 +56,9 @@ public class MainActivity extends AppCompatActivity {
         webView = findViewById(R.id.webview);
         progressBar = findViewById(R.id.progressBar);
 
+        // Load the URL
+        loadUrl();
+
         // Enable JavaScript and set up WebView
         webView.getSettings().setJavaScriptEnabled(true);
         webView.setWebViewClient(new WebViewClient() {
@@ -91,8 +94,7 @@ public class MainActivity extends AppCompatActivity {
 
 
 
-        // Load the URL
-        loadUrl();
+
 
         startLocalServer();
 
