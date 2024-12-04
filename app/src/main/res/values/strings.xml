@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Service App</string>
+    <string name="api_domain">http://192.168.200.172:44326</string>
 </resources>

