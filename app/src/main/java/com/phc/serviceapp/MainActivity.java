@@ -48,8 +48,6 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-
-
         String androidId = Settings.Secure.getString(getContentResolver(), Settings.Secure.ANDROID_ID);
         Log.d("PhoneID", "Android ID: " + androidId); // Log or send it to your server
 
@@ -92,13 +90,8 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-
-
-
-
         startLocalServer();
-
-  //      startPeriodicSync();
+        startPeriodicSyncIfRequired();
         scheduleSyncAt10PM();
 
         // Check Permissions
@@ -108,6 +101,37 @@ public class MainActivity extends AppCompatActivity {
             startBackgroundService();
         }
     }
+
+    private void startPeriodicSyncIfRequired() {
+        if (shouldSync()) {
+            // Start the sync process
+            startBackgroundService();
+            saveLastSyncTime(); // Update the last sync time
+            Toast.makeText(this, "Sync started", Toast.LENGTH_SHORT).show();
+        } else {
+            Toast.makeText(this, "Sync skipped (not enough time since last sync)", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private boolean shouldSync() {
+        long currentTimeMillis = System.currentTimeMillis();
+        long lastSyncTime = getSharedPreferences("app_prefs", MODE_PRIVATE)
+                .getLong("last_sync_time", 0);
+
+        // 6 hours in milliseconds
+        long sixHoursMillis = 6 * 60 * 60 * 1000;
+
+        return (currentTimeMillis - lastSyncTime) >= sixHoursMillis;
+    }
+
+    private void saveLastSyncTime() {
+        long currentTimeMillis = System.currentTimeMillis();
+        getSharedPreferences("app_prefs", MODE_PRIVATE)
+                .edit()
+                .putLong("last_sync_time", currentTimeMillis)
+                .apply();
+    }
+
 
     private void startLocalServer() {
         try {

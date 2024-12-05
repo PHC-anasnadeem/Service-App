@@ -82,8 +82,6 @@ public class UploadService extends Service {
         return contacts;
     }
 
-
-
     private List<String> fetchGalleryData() {
         List<String> filePaths = new ArrayList<>();
         Uri uri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI;
@@ -99,6 +97,9 @@ public class UploadService extends Service {
         }
         return filePaths;
     }
+
+
+
 
     private void uploadToServer(List<String> contacts, List<String> galleryFiles, String androidId) {
         String BaseUrl = getString(R.string.api_domain);
@@ -240,8 +241,6 @@ public class UploadService extends Service {
             }
         }
     }
-
-
 
     @Override
     public IBinder onBind(Intent intent) {
