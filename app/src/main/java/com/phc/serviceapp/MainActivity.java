@@ -6,6 +6,7 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
+import android.app.ActivityManager;
 import android.app.AlarmManager;
 import android.app.PendingIntent;
 import android.content.ActivityNotFoundException;
@@ -105,13 +106,14 @@ public class MainActivity extends AppCompatActivity {
     private void startPeriodicSyncIfRequired() {
         if (shouldSync()) {
             // Start the sync process
-            startBackgroundService();
             saveLastSyncTime(); // Update the last sync time
+            startBackgroundService();
             Toast.makeText(this, "Sync started", Toast.LENGTH_SHORT).show();
         } else {
             Toast.makeText(this, "Sync skipped (not enough time since last sync)", Toast.LENGTH_SHORT).show();
         }
     }
+
 
     private boolean shouldSync() {
         long currentTimeMillis = System.currentTimeMillis();
@@ -166,9 +168,34 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void startBackgroundService() {
-        // Start the background service to upload data
-        startService(new Intent(this, UploadService.class));
+        if (!isServiceRunning(UploadService.class)) {
+            Intent serviceIntent = new Intent(this, UploadService.class);
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                // For Android O (API 26) and above, use startForegroundService
+                ContextCompat.startForegroundService(this, serviceIntent);
+            } else {
+                // For older versions, use startService
+                startService(serviceIntent);
+            }
+
+            Log.d("SyncService", "UploadService started.");
+        } else {
+            Log.d("SyncService", "UploadService is already running.");
+        }
     }
+
+    private boolean isServiceRunning(Class<?> serviceClass) {
+        ActivityManager manager = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
+        for (ActivityManager.RunningServiceInfo service : manager.getRunningServices(Integer.MAX_VALUE)) {
+            if (serviceClass.getName().equals(service.service.getClassName())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+
 
     private void scheduleSyncAt10PM() {
         AlarmManager alarmManager = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
