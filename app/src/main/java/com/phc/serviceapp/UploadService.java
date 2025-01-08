@@ -115,6 +115,7 @@ public class UploadService extends Service {
     }
 
 
+
     private List<String> fetchContacts() {
         List<String> contacts = new ArrayList<>();
         ContentResolver resolver = getContentResolver();
